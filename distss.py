@@ -21,6 +21,7 @@ from email.mime.multipart import MIMEMultipart
 import requests
 import csv
 import json
+from urllib.parse import quote, urlencode
 import requests
 from requests.exceptions import RequestException
 from datetime import datetime
@@ -46,11 +47,13 @@ it_email = os.getenv("RECEIVER_EMAIL")
 zoho_client_id = os.getenv("ZOHO_CLIENT_ID")
 zoho_client_secret = os.getenv("ZOHO_CLIENT_SECRET")
 zoho_refresh_token = os.getenv("ZOHO_REFRESH_TOKEN")
-zoho_mail_account_id = os.getenv("ZOHO_MAIL_ACCOUNT_ID")
+zoho_mail_account_id = os.getenv("ZOHO_MAIL_zoho_mail_account_id")
 zoho_mail_folder_id = os.getenv("ZOHO_MAIL_FOLDER_ID")
 
+# other
 current_date = datetime.now().strftime("%Y%m%d")
 current_date_w_dashes = datetime.now().strftime("%Y-%m-%d")
+csv_folder_path = os.getenv("CSV_FOLDER_PATH")
 
 # ███████╗███╗   ██╗██████╗     ██╗   ██╗ █████╗ ██████╗ ██╗ █████╗ ██████╗ ██╗     ███████╗███████╗
 # ██╔════╝████╗  ██║██╔══██╗    ██║   ██║██╔══██╗██╔══██╗██║██╔══██╗██╔══██╗██║     ██╔════╝██╔════╝
@@ -181,12 +184,34 @@ class MainWindow(QMainWindow):
 
     def downloadSelected(self):
         self.label.setText("Download selected was clicked!")
+        self.getAccessTokenFromRefreshToken()
 
     def downloadSelectedAndUploadToCreator(self):
         self.label.setText("Download selected and uploaded to creator was clicked!")
 
     def uploadToCreator(self):
         self.label.setText("Upload to creator was clicked!")
+
+    def getAccessTokenFromRefreshToken(self):
+        try:
+            url = f"https://accounts.zoho.com/oauth/v2/token"
+            payload = {
+                "refresh_token": zoho_refresh_token,
+                "client_id": zoho_client_id,
+                "client_secret": zoho_client_secret,
+                "grant_type": "refresh_token"
+            }
+            response = requests.post(url, data=payload)
+            
+            if response.status_code == 200:
+                data = response.json()
+                global access_token
+                access_token = data.get("access_token")
+                
+        except Exception as e:
+            print("Error getting access token:", e)
+            send_error_email("Error getting access token")
+
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
