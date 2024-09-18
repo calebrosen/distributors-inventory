@@ -54,6 +54,14 @@ zoho_client_secret = os.getenv("ZOHO_CLIENT_SECRET")
 zoho_refresh_token = os.getenv("ZOHO_REFRESH_TOKEN")
 zoho_mail_account_id = os.getenv("ZOHO_MAIL_ACCOUNT_ID")
 zoho_mail_folder_id = os.getenv("ZOHO_MAIL_FOLDER_ID")
+zoho_username_email = os.getenv("ZOHO_USERNAME_EMAIL")
+zoho_password = os.getenv("ZOHO_PASSWORD")
+
+# distributor logins
+pcs_username = os.getenv("PCS_USERNAME")
+pcs_password = os.getenv("PCS_PASSWORD")
+pin_username = os.getenv("PIN_USERNAME")
+pin_password = os.getenv("PIN_PASSWORD")
 
 # other
 log_messages = []
@@ -268,6 +276,22 @@ class MainWindow(QMainWindow):
             append_log_messages(f"Error getting access token: {e}")
             send_error_email("Error getting access token")
 
+
+                                                                                                              
+                                                                                                           
+# ___       ___      _     _______                  _     ________  ____
+# `MMb     dMM'     dM.    `MM`MM'                 dM.    `MMMMMMMb.`MM'
+#  MMM.   ,PMM     ,MMb     MM MM                 ,MMb     MM    `Mb MM
+#  M`Mb   d'MM     d'YM.    MM MM                 d'YM.    MM     MM MM
+#  M YM. ,P MM    ,P `Mb    MM MM                ,P `Mb    MM     MM MM
+#  M `Mb d' MM    d'  YM.   MM MM                d'  YM.   MM    .M9 MM
+#  M  YM.P  MM   ,P   `Mb   MM MM               ,P   `Mb   MMMMMMM9' MM
+#  M  `Mb'  MM   d'    YM.  MM MM               d'    YM.  MM        MM
+#  M   YP   MM  ,MMMMMMMMb  MM MM              ,MMMMMMMMb  MM        MM
+#  M   `'   MM  d'      YM. MM MM    /         d'      YM. MM        MM
+# _M_      _MM_dM_     _dMM_MM_MMMMMMM       _dM_     _dMM_MM_      _MM_
+                                                                                                 
+#--------------------------------------------------------------------------------------------------------
 
 #      ___       _______     _______.
 #     /   \     |   ____|   /       |
@@ -659,16 +683,416 @@ def get_for_spreadsheet(access_token):
     append_log_messages(f'FOR Date Received: {for_email_received_date}')
     append_log_messages(f'FOR Rows: {for_row_count}')
         
-        
-        
-        
+
 # _______ .__   __.  _______      _______   ______   .______
 # |   ____||  \ |  | |       \    |   ____| /  __  \  |   _  \
 # |  |__   |   \|  | |  .--.  |   |  |__   |  |  |  | |  |_)  |
 # |   __|  |  . `  | |  |  |  |   |   __|  |  |  |  | |      /
 # |  |____ |  |\   | |  '--'  |   |  |     |  `--'  | |  |\  \----.
 # |_______||__| \__| |_______/    |__|      \______/  | _| `._____|
+  
+
+# ---------------------------------------------------------------------------------
+
+
+# .______      .___  ___.  __
+# |   _  \     |   \/   | |  |
+# |  |_)  |    |  \  /  | |  |
+# |      /     |  |\/|  | |  |
+# |  |\  \----.|  |  |  | |  |
+# | _| `._____||__|  |__| |__|
+                                                                                              
+  
+def get_rmi_spreadsheet(access_token):
+    rmi_search_param = urllib.parse.quote_plus("Daily inventory report from RMI attached")
+    rmi_search_param2 = urllib.parse.quote_plus("INTRESRCE")
+    rmi_message_url = f"https://mail.zoho.com/api/accounts/{zoho_mail_account_id}/messages/search?searchKey=subject:{rmi_search_param}::fileName:{rmi_search_param2}"
+
+    headers = {
+        'Authorization': f'Zoho-oauthtoken {access_token}',
+        'Content-Type': 'application/json'
+    }
+
+    try:
+        response = requests.get(rmi_message_url, headers=headers)
+        response.raise_for_status()
+    except RequestException as e:
+        append_log_messages(f"RMI message request failed: {e}")
+        return
+
+    response_data = response.json()
+
+    rmi_message_id = None
+    rmi_email_received_date = None
+    
+    if 'data' in response_data:
+        rmi_data = response_data['data']
+        if isinstance(rmi_data, list) and len(rmi_data) > 0:
+            first_element = rmi_data[0]
+            if 'messageId' in first_element:
+                rmi_message_id = first_element['messageId']
+                append_log_messages(f'RMI Message ID: {rmi_message_id}')
+                rmi_email_received_date_unix_epoch = first_element.get('receivedTime')
+                if rmi_email_received_date_unix_epoch:
+                    rmi_email_received_date = datetime.utcfromtimestamp(int(rmi_email_received_date_unix_epoch) / 1000).strftime('%m/%d/%Y')
+                    
+    if not rmi_message_id:
+        append_log_messages("No messages found for RMI.")
+        return
+    
+    rmi_attachment_info_url = (f"https://mail.zoho.com/api/accounts/{zoho_mail_account_id}/folders/{zoho_mail_folder_id}/"
+                               f"messages/{rmi_message_id}/attachmentinfo")
+    
+    try:
+        response = requests.get(rmi_attachment_info_url, headers=headers)
+        response.raise_for_status()
+    except RequestException as e:
+        append_log_messages(f"RMI attachment info request failed: {e}")
+        return
+
+    response_data = response.json()
+    
+    rmi_attachment_id = None
+    
+    if 'data' in response_data and 'attachments' in response_data['data']:
+        rmi_attachments = response_data['data']['attachments']
+        for attachment in rmi_attachments:
+            if attachment['attachmentName'].endswith(".csv"):
+                rmi_attachment_id = attachment['attachmentId']
+                append_log_messages(f'RMI Attachment ID: {rmi_attachment_id}')
+                break
+    
+    if not rmi_attachment_id:
+        append_log_messages("No CSV attachment found for RMI.")
+        return
+    
+    rmi_attachment_download_url = (f"https://mail.zoho.com/api/accounts/{zoho_mail_account_id}/folders/{zoho_mail_folder_id}/"
+                                   f"messages/{rmi_message_id}/attachments/{rmi_attachment_id}")
+    
+    try:
+        response = requests.get(rmi_attachment_download_url, headers=headers)
+        response.raise_for_status()
+        response_text = response.text
+    except RequestException as e:
+        append_log_messages(f"RMI attachment download request failed: {e}")
+        return
+  
+    if not response_text.endswith(","):
+        response_text += ","
+
+    rows = response_text.splitlines()
+
+    def get_csv_fields(line):
+        csv_reader = csv.reader([line])
+        return next(csv_reader)
+        
+    csv_data = [get_csv_fields(row) for row in rows]
+
+    csv_file_rmi = os.path.join(csv_folder_path, 'rmi.csv')
+
+    with open(csv_file_rmi, 'w', newline='', encoding='utf-8') as fp:
+        writer = csv.writer(fp)
+
+        rmi_row_count = 0
+        
+        for fields in csv_data:
+            if fields:
+                writer.writerow(fields)
+                rmi_row_count += 1
+    
+    append_log_messages(f'RMI Date Received: {rmi_email_received_date}')
+    append_log_messages(f'RMI Rows: {rmi_row_count}')
+  
+  
+#  _______ .__   __.  _______     .______      .___  ___.  __
+# |   ____||  \ |  | |       \    |   _  \     |   \/   | |  |
+# |  |__   |   \|  | |  .--.  |   |  |_)  |    |  \  /  | |  |
+# |   __|  |  . `  | |  |  |  |   |      /     |  |\/|  | |  |
+# |  |____ |  |\   | |  '--'  |   |  |\  \----.|  |  |  | |  |
+# |_______||__| \__| |_______/    | _| `._____||__|  |__| |__|
+  
+  
+# ---------------------------------------------------------------------------------
+
+
+# .______       __    __  .___________.
+# |   _  \     |  |  |  | |           |
+# |  |_)  |    |  |  |  | `---|  |----`
+# |      /     |  |  |  |     |  |
+# |  |\  \----.|  `--'  |     |  |
+# | _| `._____| \______/      |__|
+
+
+def get_rut_spreadsheet(access_token):
+    rut_search_param = urllib.parse.quote_plus("Rutherford Equipment Inventory Feed")
+    rut_message_url = f"https://mail.zoho.com/api/accounts/{zoho_mail_account_id}/messages/search?searchKey=subject:{rut_search_param}"
+
+    headers = {
+        'Authorization': f'Zoho-oauthtoken {access_token}',
+        'Content-Type': 'application/json'
+    }
+
+    try:
+        response = requests.get(rut_message_url, headers=headers)
+        response.raise_for_status()
+    except RequestException as e:
+        append_log_messages(f"RUT message request failed: {e}")
+        return
+
+    response_data = response.json()
+
+    rut_message_id = None
+    rut_email_received_date = None
+    
+    if 'data' in response_data:
+        rut_data = response_data['data']
+        if isinstance(rut_data, list) and len(rut_data) > 0:
+            first_element = rut_data[0]
+            if 'messageId' in first_element:
+                rut_message_id = first_element['messageId']
+                append_log_messages(f'RUT Message ID: {rut_message_id}')
+                rut_email_received_date_unix_epoch = first_element.get('receivedTime')
+                if rut_email_received_date_unix_epoch:
+                    rut_email_received_date = datetime.utcfromtimestamp(int(rut_email_received_date_unix_epoch) / 1000).strftime('%m/%d/%Y')
+                    
+    if not rut_message_id:
+        append_log_messages("No messages found for RUT.")
+        return
+    
+    rut_attachment_info_url = (f"https://mail.zoho.com/api/accounts/{zoho_mail_account_id}/folders/{zoho_mail_folder_id}/"
+                               f"messages/{rut_message_id}/attachmentinfo")
+    
+    try:
+        response = requests.get(rut_attachment_info_url, headers=headers)
+        response.raise_for_status()
+    except RequestException as e:
+        append_log_messages(f"RUT attachment info request failed: {e}")
+        return
+
+    response_data = response.json()
+    
+    rut_attachment_id = None
+    
+    if 'data' in response_data and 'attachments' in response_data['data']:
+        rut_attachments = response_data['data']['attachments']
+        for attachment in rut_attachments:
+            if attachment['attachmentName'].endswith(".csv"):
+                rut_attachment_id = attachment['attachmentId']
+                append_log_messages(f'RUT Attachment ID: {rut_attachment_id}')
+                break
+    
+    if not rut_attachment_id:
+        append_log_messages("No CSV attachment found for RUT.")
+        return
+    
+    rut_attachment_download_url = (f"https://mail.zoho.com/api/accounts/{zoho_mail_account_id}/folders/{zoho_mail_folder_id}/"
+                                   f"messages/{rut_message_id}/attachments/{rut_attachment_id}")
+    
+    try:
+        response = requests.get(rut_attachment_download_url, headers=headers)
+        response.raise_for_status()
+        response_text = response.text
+    except RequestException as e:
+        append_log_messages(f"RUT attachment download request failed: {e}")
+        return
+  
+    if not response_text.endswith(","):
+        response_text += ","
+
+    rows = response_text.splitlines()
+
+    def get_csv_fields(line):
+        csv_reader = csv.reader([line])
+        return next(csv_reader)
+        
+    csv_data = [get_csv_fields(row) for row in rows]
+
+    csv_file_rut = os.path.join(csv_folder_path, 'rut.csv')
+
+    with open(csv_file_rut, 'w', newline='', encoding='utf-8') as fp:
+        writer = csv.writer(fp)
+
+        rut_row_count = 0
+        
+        for fields in csv_data:
+            if fields:
+                writer.writerow(fields)
+                rut_row_count += 1
+    
+    append_log_messages(f'RUT Date Received: {rut_email_received_date}')
+    append_log_messages(f'RUT Rows: {rut_row_count}')
+
+
+#  _______ .__   __.  _______     .______       __    __  .___________.
+# |   ____||  \ |  | |       \    |   _  \     |  |  |  | |           |
+# |  |__   |   \|  | |  .--.  |   |  |_)  |    |  |  |  | `---|  |----`
+# |   __|  |  . `  | |  |  |  |   |      /     |  |  |  |     |  |
+# |  |____ |  |\   | |  '--'  |   |  |\  \----.|  `--'  |     |  |
+# |_______||__| \__| |_______/    | _| `._____| \______/      |__|
                                                                      
+
+# ---------------------------------------------------------------------------------
+
+
+# .___________.    _______. _______
+# |           |   /       ||       \
+# `---|  |----`  |   (----`|  .--.  |
+#     |  |        \   \    |  |  |  |
+#     |  |    .----)   |   |  '--'  |
+#     |__|    |_______/    |_______/
+
+
+def get_tsd_spreadsheet(access_token):
+    tsd_search_param = urllib.parse.quote_plus("-")
+    tsd_search_param2 = urllib.parse.quote_plus("IRG")
+    tsd_message_url = f"https://mail.zoho.com/api/accounts/{zoho_mail_account_id}/messages/search?searchKey=fileContent:{tsd_search_param}::fileName:{tsd_search_param2}"
+
+    headers = {
+        'Authorization': f'Zoho-oauthtoken {access_token}',
+        'Content-Type': 'application/json'
+    }
+
+    try:
+        response = requests.get(tsd_message_url, headers=headers)
+        response.raise_for_status()
+    except RequestException as e:
+        append_log_messages(f"TSD message request failed: {e}")
+        return
+
+    response_data = response.json()
+
+    tsd_message_id = None
+    tsd_email_received_date = None
+    
+    if 'data' in response_data:
+        tsd_data = response_data['data']
+        if isinstance(tsd_data, list) and len(tsd_data) > 0:
+            first_element = tsd_data[0]
+            if 'messageId' in first_element:
+                tsd_message_id = first_element['messageId']
+                append_log_messages(f'TSD Message ID: {tsd_message_id}')
+                tsd_email_received_date_unix_epoch = first_element.get('receivedTime')
+                if tsd_email_received_date_unix_epoch:
+                    tsd_email_received_date = datetime.utcfromtimestamp(int(tsd_email_received_date_unix_epoch) / 1000).strftime('%m/%d/%Y')
+                    
+    if not tsd_message_id:
+        append_log_messages("No messages found for TSD.")
+        return
+    
+    tsd_attachment_info_url = (f"https://mail.zoho.com/api/accounts/{zoho_mail_account_id}/folders/{zoho_mail_folder_id}/"
+                               f"messages/{tsd_message_id}/attachmentinfo")
+    
+    try:
+        response = requests.get(tsd_attachment_info_url, headers=headers)
+        response.raise_for_status()
+    except RequestException as e:
+        append_log_messages(f"TSD attachment info request failed: {e}")
+        return
+
+    response_data = response.json()
+    
+    tsd_attachment_id = None
+    
+    if 'data' in response_data and 'attachments' in response_data['data']:
+        tsd_attachments = response_data['data']['attachments']
+        for attachment in tsd_attachments:
+            if attachment['attachmentName'].endswith(".csv"):
+                tsd_attachment_id = attachment['attachmentId']
+                append_log_messages(f'TSD Attachment ID: {tsd_attachment_id}')
+                break
+    
+    if not tsd_attachment_id:
+        append_log_messages("No CSV attachment found for TSD.")
+        return
+    
+    tsd_attachment_download_url = (f"https://mail.zoho.com/api/accounts/{zoho_mail_account_id}/folders/{zoho_mail_folder_id}/"
+                                   f"messages/{tsd_message_id}/attachments/{tsd_attachment_id}")
+    
+    try:
+        response = requests.get(tsd_attachment_download_url, headers=headers)
+        response.raise_for_status()
+        response_text = response.text
+    except RequestException as e:
+        append_log_messages(f"TSD attachment download request failed: {e}")
+        return
+  
+    if not response_text.endswith(","):
+        response_text += ","
+
+    rows = response_text.splitlines()
+
+    def get_csv_fields(line):
+        csv_reader = csv.reader([line])
+        return next(csv_reader)
+        
+    csv_data = [get_csv_fields(row) for row in rows]
+
+    csv_file_tsd = os.path.join(csv_folder_path, 'tsd.csv')
+
+    with open(csv_file_tsd, 'w', newline='', encoding='utf-8') as fp:
+        writer = csv.writer(fp)
+
+        tsd_row_count = 0
+        
+        for fields in csv_data:
+            if fields:
+                writer.writerow(fields)
+                tsd_row_count += 1
+    
+    append_log_messages(f'TSD Date Received: {tsd_email_received_date}')
+    append_log_messages(f'TSD Rows: {tsd_row_count}')
+    
+
+
+#  _______ .__   __.  _______     .___________.    _______. _______
+# |   ____||  \ |  | |       \    |           |   /       ||       \
+# |  |__   |   \|  | |  .--.  |   `---|  |----`  |   (----`|  .--.  |
+# |   __|  |  . `  | |  |  |  |       |  |        \   \    |  |  |  |
+# |  |____ |  |\   | |  '--'  |       |  |    .----)   |   |  '--'  |
+# |_______||__| \__| |_______/        |__|    |_______/    |_______/
+                                   
+
+  # __________ ___      ___________         ___       ___      _     _______                  _     ________  ____
+# `MMMMMMMMM `MM\     `M'`MMMMMMMb.       `MMb     dMM'     dM.    `MM`MM'                 dM.    `MMMMMMMb.`MM'
+#  MM      \  MMM\     M  MM    `Mb        MMM.   ,PMM     ,MMb     MM MM                 ,MMb     MM    `Mb MM
+#  MM         M\MM\    M  MM     MM        M`Mb   d'MM     d'YM.    MM MM                 d'YM.    MM     MM MM
+#  MM    ,    M \MM\   M  MM     MM        M YM. ,P MM    ,P `Mb    MM MM                ,P `Mb    MM     MM MM
+#  MMMMMMM    M  \MM\  M  MM     MM        M `Mb d' MM    d'  YM.   MM MM                d'  YM.   MM    .M9 MM
+#  MM    `    M   \MM\ M  MM     MM        M  YM.P  MM   ,P   `Mb   MM MM               ,P   `Mb   MMMMMMM9' MM
+#  MM         M    \MM\M  MM     MM        M  `Mb'  MM   d'    YM.  MM MM               d'    YM.  MM        MM
+#  MM         M     \MMM  MM     MM        M   YP   MM  ,MMMMMMMMb  MM MM              ,MMMMMMMMb  MM        MM
+#  MM      /  M      \MM  MM    .M9        M   `'   MM  d'      YM. MM MM    /         d'      YM. MM        MM
+# _MMMMMMMMM _M_      \M _MMMMMMM9'       _M_      _MM_dM_     _dMM_MM_MMMMMMM       _dM_     _dMM_MM_      _MM_
+
+
+
+#   _____    _____   _____        _____      __      _    _____   __    __     __    __
+#  / ____\  / ___/  (_   _)      / ___/     /  \    / )  (_   _)  ) )  ( (     \ \  / /
+# ( (___   ( (__      | |       ( (__      / /\ \  / /     | |   ( (    ) )    () \/ ()
+#  \___ \   ) __)     | |        ) __)     ) ) ) ) ) )     | |    ) )  ( (     / _  _ \
+#      ) ) ( (        | |   __  ( (       ( ( ( ( ( (      | |   ( (    ) )   / / \/ \ \
+#  ___/ /   \ \___  __| |___) )  \ \___   / /  \ \/ /     _| |__  ) \__/ (   /_/      \_\
+# /____/     \____\ \________/    \____\ (_/    \__/     /_____(  \______/  (/          \)
+                                                                                         
+
+def get_pcs_spreadsheet:
+    
+
+
+
+
+
+
+
+#   _____      __      _   ______         _____    _____   _____        _____      __      _    _____   __    __     __    __
+#  / ___/     /  \    / ) (_  __ \       / ____\  / ___/  (_   _)      / ___/     /  \    / )  (_   _)  ) )  ( (     \ \  / /
+# ( (__      / /\ \  / /    ) ) \ \     ( (___   ( (__      | |       ( (__      / /\ \  / /     | |   ( (    ) )    () \/ ()
+#  ) __)     ) ) ) ) ) )   ( (   ) )     \___ \   ) __)     | |        ) __)     ) ) ) ) ) )     | |    ) )  ( (     / _  _ \
+# ( (       ( ( ( ( ( (     ) )  ) )         ) ) ( (        | |   __  ( (       ( ( ( ( ( (      | |   ( (    ) )   / / \/ \ \
+#  \ \___   / /  \ \/ /    / /__/ /      ___/ /   \ \___  __| |___) )  \ \___   / /  \ \/ /     _| |__  ) \__/ (   /_/      \_\
+#   \____\ (_/    \__/    (______/      /____/     \____\ \________/    \____\ (_/    \__/     /_____(  \______/  (/          \)
+                                                                                                                               
+
        
 if __name__ == "__main__":
     app = QApplication(sys.argv)
