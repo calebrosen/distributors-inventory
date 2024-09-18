@@ -7,7 +7,9 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.common.exceptions import StaleElementReferenceException, NoSuchElementException, TimeoutException
 from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.action_chains import ActionChains
+from selenium.webdriver.common.alert import Alert
 from selenium.webdriver.support import expected_conditions as EC
 import logging
 from pynput.keyboard import Key, Controller as KeyboardController
@@ -41,12 +43,14 @@ load_dotenv()
 #  ╚████╔╝ ██║  ██║██║  ██║██║██║  ██║██████╔╝███████╗███████╗███████║
 #   ╚═══╝  ╚═╝  ╚═╝╚═╝  ╚═╝╚═╝╚═╝  ╚═╝╚═════╝ ╚══════╝╚══════╝╚══════╝
 
+
 # email for error catching
 smtp_server = os.getenv("SMTP_SERVER")
 smtp_port = int(os.getenv("SMTP_PORT"))
 gmail_user = os.getenv("GMAIL_USER")
 gmail_password = os.getenv("GMAIL_PASSWORD")
 it_email = os.getenv("RECEIVER_EMAIL")
+
 
 # zoho stuff
 zoho_client_id = os.getenv("ZOHO_CLIENT_ID")
@@ -57,17 +61,24 @@ zoho_mail_folder_id = os.getenv("ZOHO_MAIL_FOLDER_ID")
 zoho_username_email = os.getenv("ZOHO_USERNAME_EMAIL")
 zoho_password = os.getenv("ZOHO_PASSWORD")
 
+
 # distributor logins
 pcs_username = os.getenv("PCS_USERNAME")
 pcs_password = os.getenv("PCS_PASSWORD")
 pin_username = os.getenv("PIN_USERNAME")
 pin_password = os.getenv("PIN_PASSWORD")
 
+
 # other
 log_messages = []
 current_date = datetime.now().strftime("%Y%m%d")
 current_date_w_dashes = datetime.now().strftime("%Y-%m-%d")
 csv_folder_path = os.getenv("CSV_FOLDER_PATH")
+download_dir = os.path.abspath(csv_folder_path)
+pcs_file_name = download_dir + "\AvailQtyForSale_" + current_date + ".csv"
+pin_file_name = download_dir + "\px_inventory_" + current_date_w_dashes + ".csv"
+selenium_files_to_check_for = []
+
 
 # ███████╗███╗   ██╗██████╗     ██╗   ██╗ █████╗ ██████╗ ██╗ █████╗ ██████╗ ██╗     ███████╗███████╗
 # ██╔════╝████╗  ██║██╔══██╗    ██║   ██║██╔══██╗██╔══██╗██║██╔══██╗██╔══██╗██║     ██╔════╝██╔════╝
@@ -75,7 +86,8 @@ csv_folder_path = os.getenv("CSV_FOLDER_PATH")
 # ██╔══╝  ██║╚██╗██║██║  ██║    ╚██╗ ██╔╝██╔══██║██╔══██╗██║██╔══██║██╔══██╗██║     ██╔══╝  ╚════██║
 # ███████╗██║ ╚████║██████╔╝     ╚████╔╝ ██║  ██║██║  ██║██║██║  ██║██████╔╝███████╗███████╗███████║
 # ╚══════╝╚═╝  ╚═══╝╚═════╝       ╚═══╝  ╚═╝  ╚═╝╚═╝  ╚═╝╚═╝╚═╝  ╚═╝╚═════╝ ╚══════╝╚══════╝╚══════╝
-                                                                                                                                                                                                                                                                             
+                                               
+                                                                                                                                                                                                                                   
 def send_error_email(error_message):
     sender_email = gmail_user
     receiver_email = it_email
@@ -118,7 +130,6 @@ class MainWindow(QMainWindow):
         self.access_token = None
         self.setWindowTitle("IRG Distributor Spreadsheets")
         self.setGeometry(100, 100, 600, 500)
-
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
         main_layout = QVBoxLayout(central_widget)
@@ -275,23 +286,19 @@ class MainWindow(QMainWindow):
             print("Error getting access token:", e)
             append_log_messages(f"Error getting access token: {e}")
             send_error_email("Error getting access token")
-
-
-                                                                                                              
+                                                                                              
                                                                                                            
-# ___       ___      _     _______                  _     ________  ____
-# `MMb     dMM'     dM.    `MM`MM'                 dM.    `MMMMMMMb.`MM'
-#  MMM.   ,PMM     ,MMb     MM MM                 ,MMb     MM    `Mb MM
-#  M`Mb   d'MM     d'YM.    MM MM                 d'YM.    MM     MM MM
-#  M YM. ,P MM    ,P `Mb    MM MM                ,P `Mb    MM     MM MM
-#  M `Mb d' MM    d'  YM.   MM MM                d'  YM.   MM    .M9 MM
-#  M  YM.P  MM   ,P   `Mb   MM MM               ,P   `Mb   MMMMMMM9' MM
-#  M  `Mb'  MM   d'    YM.  MM MM               d'    YM.  MM        MM
-#  M   YP   MM  ,MMMMMMMMb  MM MM              ,MMMMMMMMb  MM        MM
-#  M   `'   MM  d'      YM. MM MM    /         d'      YM. MM        MM
-# _M_      _MM_dM_     _dMM_MM_MMMMMMM       _dM_     _dMM_MM_      _MM_
+#    __    __       ____      _____   _____            ____     _____     _____
+#    \ \  / /      (    )    (_   _) (_   _)          (    )   (  __ \   (_   _)
+#    () \/ ()      / /\ \      | |     | |            / /\ \    ) )_) )    | |
+#    / _  _ \     ( (__) )     | |     | |           ( (__) )  (  ___/     | |
+#   / / \/ \ \     )    (      | |     | |   __       )    (    ) )        | |
+#  /_/      \_\   /  /\  \    _| |__ __| |___) )     /  /\  \  ( (        _| |__
+# (/          \) /__(  )__\  /_____( \________/     /__(  )__\ /__\      /_____(
+                                                                               
                                                                                                  
 #--------------------------------------------------------------------------------------------------------
+
 
 #      ___       _______     _______.
 #     /   \     |   ____|   /       |
@@ -1052,18 +1059,19 @@ def get_tsd_spreadsheet(access_token):
 # |_______||__| \__| |_______/        |__|    |_______/    |_______/
                                    
 
-  # __________ ___      ___________         ___       ___      _     _______                  _     ________  ____
-# `MMMMMMMMM `MM\     `M'`MMMMMMMb.       `MMb     dMM'     dM.    `MM`MM'                 dM.    `MMMMMMMb.`MM'
-#  MM      \  MMM\     M  MM    `Mb        MMM.   ,PMM     ,MMb     MM MM                 ,MMb     MM    `Mb MM
-#  MM         M\MM\    M  MM     MM        M`Mb   d'MM     d'YM.    MM MM                 d'YM.    MM     MM MM
-#  MM    ,    M \MM\   M  MM     MM        M YM. ,P MM    ,P `Mb    MM MM                ,P `Mb    MM     MM MM
-#  MMMMMMM    M  \MM\  M  MM     MM        M `Mb d' MM    d'  YM.   MM MM                d'  YM.   MM    .M9 MM
-#  MM    `    M   \MM\ M  MM     MM        M  YM.P  MM   ,P   `Mb   MM MM               ,P   `Mb   MMMMMMM9' MM
-#  MM         M    \MM\M  MM     MM        M  `Mb'  MM   d'    YM.  MM MM               d'    YM.  MM        MM
-#  MM         M     \MMM  MM     MM        M   YP   MM  ,MMMMMMMMb  MM MM              ,MMMMMMMMb  MM        MM
-#  MM      /  M      \MM  MM    .M9        M   `'   MM  d'      YM. MM MM    /         d'      YM. MM        MM
-# _MMMMMMMMM _M_      \M _MMMMMMM9'       _M_      _MM_dM_     _dMM_MM_MMMMMMM       _dM_     _dMM_MM_      _MM_
+#--------------------------------------------------------------------------------------------------------
 
+
+#   _____      __      _   ______          __    __       ____      _____   _____            ____     _____     _____
+#  / ___/     /  \    / ) (_  __ \         \ \  / /      (    )    (_   _) (_   _)          (    )   (  __ \   (_   _)
+# ( (__      / /\ \  / /    ) ) \ \        () \/ ()      / /\ \      | |     | |            / /\ \    ) )_) )    | |
+#  ) __)     ) ) ) ) ) )   ( (   ) )       / _  _ \     ( (__) )     | |     | |           ( (__) )  (  ___/     | |
+# ( (       ( ( ( ( ( (     ) )  ) )      / / \/ \ \     )    (      | |     | |   __       )    (    ) )        | |
+#  \ \___   / /  \ \/ /    / /__/ /      /_/      \_\   /  /\  \    _| |__ __| |___) )     /  /\  \  ( (        _| |__
+#   \____\ (_/    \__/    (______/      (/          \) /__(  )__\  /_____( \________/     /__(  )__\ /__\      /_____(
+                                                                                                                     
+
+#--------------------------------------------------------------------------------------------------------
 
 
 #   _____    _____   _____        _____      __      _    _____   __    __     __    __
@@ -1073,15 +1081,164 @@ def get_tsd_spreadsheet(access_token):
 #      ) ) ( (        | |   __  ( (       ( ( ( ( ( (      | |   ( (    ) )   / / \/ \ \
 #  ___/ /   \ \___  __| |___) )  \ \___   / /  \ \/ /     _| |__  ) \__/ (   /_/      \_\
 # /____/     \____\ \________/    \____\ (_/    \__/     /_____(  \______/  (/          \)
-                                                                                         
+                                      
 
-def get_pcs_spreadsheet:
+#--------------------------------------------------------------------------------------------------------
+
+
+# .______     ______     _______.
+# |   _  \   /      |   /       |
+# |  |_)  | |  ,----'  |   (----`
+# |   ___/  |  |        \   \
+# |  |      |  `----.----)   |
+# | _|       \______|_______/
+
+
+#--------------------------------------------------------------------------------------------------------
+
+
+def get_pcs_spreadsheet(i):
+
+    options = Options()
+    options.add_argument('--enable-logging')
+    options.add_argument('--v=1')
+
+    prefs = {
+        'download.default_directory': download_dir,
+        'download.prompt_for_download': False,
+        'directory_upgrade': True,
+        'safebrowsing.enabled': True
+    }
+
+    options.add_experimental_option('prefs', prefs)
+    driver = webdriver.Chrome(options=options)
+    wait = WebDriverWait(driver, 10)
+    driver.get("https://palmcoastorders.lp4fb.com/index.php?route=account/login")
+    wait.until(EC.presence_of_element_located((By.ID, "username"))).send_keys(pcs_username)
+    wait.until(EC.presence_of_element_located((By.ID, "password"))).send_keys(pcs_password)
+    wait.until(EC.element_to_be_clickable((By.XPATH, "/html/body/div/div[1]/div/div/div[2]/form/div[3]/button"))).click()
+    time.sleep(1.25)
+        
+    # downloading the spreadsheet in a new tab
+    driver.execute_script(
+        '''window.open("https://palmcoastorders.lp4fb.com/index.php?route=report/report/csv/avail-for-sale&lg%5B%5D=1","_blank");'''
+    )
     
 
+    timeout = 30
+    elapsed = 0
+    sleep_interval = 0.5
+
+    while not os.path.exists(pcs_file_name) and elapsed < timeout:
+        time.sleep(sleep_interval)
+        elapsed += sleep_interval
+
+    if os.path.exists(pcs_file_name):
+        append_log_messages("PCS File Downloaded")
+        # renaming file to standard format
+        os.rename(pcs_file_name, download_dir + "\pcs.csv")
+    else:
+        append_log_messages(f"PCS File not found after waiting {timeout} seconds.")
+    
+    driver.quit()
 
 
+#  _______ .__   __.  _______     .______     ______     _______.
+# |   ____||  \ |  | |       \    |   _  \   /      |   /       |
+# |  |__   |   \|  | |  .--.  |   |  |_)  | |  ,----'  |   (----`
+# |   __|  |  . `  | |  |  |  |   |   ___/  |  |        \   \
+# |  |____ |  |\   | |  '--'  |   |  |      |  `----.----)   |
+# |_______||__| \__| |_______/    | _|       \______|_______/
 
 
+#--------------------------------------------------------------------------------------------------------
+
+
+# .______    __  .__   __.
+# |   _  \  |  | |  \ |  |
+# |  |_)  | |  | |   \|  |
+# |   ___/  |  | |  . `  |
+# |  |      |  | |  |\   |
+# | _|      |__| |__| \__|
+
+
+def get_pin_spreadsheet(i):
+
+    options = Options()
+    options.add_argument('--enable-logging')
+    options.add_argument('--v=1')
+
+    prefs = {
+        'download.default_directory': download_dir,
+        'download.prompt_for_download': False,
+        'directory_upgrade': True,
+        'safebrowsing.enabled': True
+    }
+
+    options.add_experimental_option('prefs', prefs)
+    driver = webdriver.Chrome(options=options)
+    wait = WebDriverWait(driver, 10)
+    
+    driver.get("https://pinnaclesalesgroup.com/membership-login/")
+    wait.until(EC.presence_of_element_located((By.ID, "swpm_user_name"))).send_keys(pin_username)
+    wait.until(EC.presence_of_element_located((By.ID, "swpm_password"))).send_keys(pin_password)
+
+    wait.until(EC.element_to_be_clickable((By.NAME, "swpm-login"))).click()
+    wait.until(EC.presence_of_element_located((By.NAME, "searchID"))).click()
+
+
+    wait.until(EC.presence_of_element_located((By.XPATH, "/html/body/div[1]/div[3]/div/div/div/div[1]/div/div/article/div/div/div/div/div[1]/div/div[2]/div/article/div[2]/div/div/article/form/div/nav[1]/ul/li/a[2]")))
+    wait.until(EC.element_to_be_clickable((By.XPATH, "/html/body/div[1]/div[3]/div/div/div/div[1]/div/div/article/div/div/div/div/div[1]/div/div[2]/div/article/div[2]/div/div/article/form/div/nav[1]/ul/li/a[2]"))).click()
+    wait.until(EC.presence_of_element_located((By.XPATH, "/html/body/div[3]/div/div[2]")))
+    wait.until(EC.element_to_be_clickable((By.XPATH, "/html/body/div[3]/div/div[2]"))).click()
+
+    timeout = 30
+    elapsed = 0
+    sleep_interval = 0.5
+
+    while not os.path.exists(pin_file_name) and elapsed < timeout:
+        time.sleep(sleep_interval)
+        elapsed += sleep_interval
+
+    if os.path.exists(pin_file_name):
+        append_log_messages("PIN File Downloaded")
+        # renaming file to standard format
+        os.rename(pin_file_name, download_dir + "\pin.csv")
+    else:
+        append_log_messages(f"PIN File not found after waiting {timeout} seconds.")
+    
+    driver.quit()
+
+
+#  _______ .__   __.  _______     .______    __  .__   __.
+# |   ____||  \ |  | |       \    |   _  \  |  | |  \ |  |
+# |  |__   |   \|  | |  .--.  |   |  |_)  | |  | |   \|  |
+# |   __|  |  . `  | |  |  |  |   |   ___/  |  | |  . `  |
+# |  |____ |  |\   | |  '--'  |   |  |      |  | |  |\   |
+# |_______||__| \__| |_______/    | _|      |__| |__| \__|
+                                                         
+
+#--------------------------------------------------------------------------------------------------------
+
+
+#  __    __  .______    __        ______        ___       _______   __  .__   __.   _______
+# |  |  |  | |   _  \  |  |      /  __  \      /   \     |       \ |  | |  \ |  |  /  _____|
+# |  |  |  | |  |_)  | |  |     |  |  |  |    /  ^  \    |  .--.  ||  | |   \|  | |  |  __
+# |  |  |  | |   ___/  |  |     |  |  |  |   /  /_\  \   |  |  |  ||  | |  . `  | |  | |_ |
+# |  `--'  | |  |      |  `----.|  `--'  |  /  _____  \  |  '--'  ||  | |  |\   | |  |__| |
+#  \______/  | _|      |_______| \______/  /__/     \__\ |_______/ |__| |__| \__|  \______|
+                                                                                                         
+# .___________.  ______        ______ .______       _______     ___   .___________.  ______   .______
+# |           | /  __  \      /      ||   _  \     |   ____|   /   \  |           | /  __  \  |   _  \
+# `---|  |----`|  |  |  |    |  ,----'|  |_)  |    |  |__     /  ^  \ `---|  |----`|  |  |  | |  |_)  |
+#     |  |     |  |  |  |    |  |     |      /     |   __|   /  /_\  \    |  |     |  |  |  | |      /
+#     |  |     |  `--'  |    |  `----.|  |\  \----.|  |____ /  _____  \   |  |     |  `--'  | |  |\  \----.
+#     |__|      \______/      \______|| _| `._____||_______/__/     \__\  |__|      \______/  | _| `._____|
+
+
+def upload_to_creator():
+    print('uploading...')
+                                                                                                                                                                                                                                                                                
 
 
 #   _____      __      _   ______         _____    _____   _____        _____      __      _    _____   __    __     __    __
@@ -1093,7 +1250,48 @@ def get_pcs_spreadsheet:
 #   \____\ (_/    \__/    (______/      /____/     \____\ \________/    \____\ (_/    \__/     /_____(  \______/  (/          \)
                                                                                                                                
 
-       
+
+
+
+
+#                                    ___
+#                                   (   )
+#    .-..     .---.   ___ .-.     .-.| |    .---.      .--.
+#   /    \   / .-, \ (   )   \   /   \ |   / .-, \   /  _  \
+#  ' .-,  ; (__) ; |  |  .-. .  |  .-. |  (__) ; |  . .' `. ;
+#  | |  . |   .'`  |  | |  | |  | |  | |    .'`  |  | '   | |
+#  | |  | |  / .'| |  | |  | |  | |  | |   / .'| |  _\_`.(___)
+#  | |  | | | /  | |  | |  | |  | |  | |  | /  | | (   ). '.
+#  | |  ' | ; |  ; |  | |  | |  | '  | |  ; |  ; |  | |  `\ |
+#  | `-'  ' ' `-'  |  | |  | |  ' `-'  /  ' `-'  |  ; '._,' '
+#  | \__.'  `.__.'_. (___)(___)  `.__,'   `.__.'_.   '.___.'
+#  | |
+# (___)
+                                                                              
+                                                                                               
+                                                                        
+def pandas():
+    print('pandas')
+  
+                                                                                          
+#                          ___                                       ___
+#                         (   )                                     (   )
+#   .--.    ___ .-.     .-.| |       .-..     .---.   ___ .-.     .-.| |    .---.      .--.
+#  /    \  (   )   \   /   \ |      /    \   / .-, \ (   )   \   /   \ |   / .-, \   /  _  \
+# |  .-. ;  |  .-. .  |  .-. |     ' .-,  ; (__) ; |  |  .-. .  |  .-. |  (__) ; |  . .' `. ;
+# |  | | |  | |  | |  | |  | |     | |  . |   .'`  |  | |  | |  | |  | |    .'`  |  | '   | |
+# |  |/  |  | |  | |  | |  | |     | |  | |  / .'| |  | |  | |  | |  | |   / .'| |  _\_`.(___)
+# |  ' _.'  | |  | |  | |  | |     | |  | | | /  | |  | |  | |  | |  | |  | /  | | (   ). '.
+# |  .'.-.  | |  | |  | '  | |     | |  ' | ; |  ; |  | |  | |  | '  | |  ; |  ; |  | |  `\ |
+# '  `-' /  | |  | |  ' `-'  /     | `-'  ' ' `-'  |  | |  | |  ' `-'  /  ' `-'  |  ; '._,' '
+#  `.__.'  (___)(___)  `.__,'      | \__.'  `.__.'_. (___)(___)  `.__,'   `.__.'_.   '.___.'
+#                                  | |
+#                                 (___)
+                                                                                          
+                                                                                          
+
+
+
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     window = MainWindow()
