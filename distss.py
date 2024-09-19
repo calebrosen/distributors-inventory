@@ -77,7 +77,6 @@ csv_folder_path = os.getenv("CSV_FOLDER_PATH")
 download_dir = os.path.abspath(csv_folder_path)
 pcs_file_name = download_dir + "\AvailQtyForSale_" + current_date + ".csv"
 pin_file_name = download_dir + "\px_inventory_" + current_date_w_dashes + ".csv"
-selenium_files_to_check_for = []
 
 
 # ███████╗███╗   ██╗██████╗     ██╗   ██╗ █████╗ ██████╗ ██╗ █████╗ ██████╗ ██╗     ███████╗███████╗
@@ -152,7 +151,6 @@ class MainWindow(QMainWindow):
         checkbox_layout = QHBoxLayout()
         self.checkboxes = []
         checkbox_labels = ["AES", "AZF", "FOR", "RMI", "RUT", "TSD", "PIN", "PCS"]
-        selected_distribors = checkbox_labels
         for label in checkbox_labels:
             checkbox = QCheckBox(label, self)
             checkbox.setChecked(True)
@@ -248,6 +246,7 @@ class MainWindow(QMainWindow):
                 func(self.access_token)
             else:
                 print(f"Function {func_name} not found")
+            get_csv_files(selected_distributors)
         
         threads = []
         for dist in selected_distributors:
@@ -1268,11 +1267,214 @@ def upload_to_creator():
 #  | |
 # (___)
                                                                               
-                                                                                               
+
+def get_csv_files(selected_distributors):
+    file_paths = []
+    if not os.path.exists(download_dir):
+        print("Directory does not exist!")
+        return file_paths
+
+    all_files = os.listdir(download_dir)
+
+    for entry in os.scandir(download_dir):
+        if entry.is_file():
+            base_name = entry.name.replace(".csv", "").lower()
+            if any(distributor.lower() in base_name for distributor in selected_distributors):
+                file_paths.append(entry.path)
+    
+    pandas(file_paths)
+    
+    return file_paths
+
                                                                         
-def pandas():
-    print('pandas')
-  
+def process_for(df):
+    df.reset_index(inplace=True)
+    df.rename(columns={'index': 'Quantity', 'availabletosell': 'Model'}, inplace=True)
+    df.insert(0, 'Distributor', 'FOR')
+    df.insert(2, 'Warehouse', '')
+    def split_sku(sku):
+        sku = str(sku).upper()
+        # extracting supplier (first 3 characters) and model (rest of the string after the first dash)
+        supplier = sku[:3]
+        model = sku[4:] if len(sku) > 4 else ''
+        return supplier, model
+    df[['Supplier', 'Model']] = df['Model'].apply(lambda x: pd.Series(split_sku(x)))
+    df.drop(['sku', 'description'], axis=1, inplace=True)
+    
+    #sorting columns
+    columns = ['Distributor', 'Model', 'Warehouse', 'Quantity', 'Supplier']
+    df = df[columns]
+    
+    #filtering for manufacturer/brand
+    filter_values = {"FMR", "AFD", "AOG", "PET", "DIM"}
+    filtered_df = df[df["Supplier"].isin(filter_values)]
+    
+    filtered_df.to_csv(f"{download_dir}/for_formatted.csv", index=False)
+    append_log_messages(f"Formatted FOR.")
+    
+    
+
+def process_rmi(df):
+    def map_supplier(pgpgrp):
+        supplier_map = {
+            "4136": "PET",
+            "4137": "PET",
+            "4178": "DIM",
+            "4740": "AOG",
+            "4741": "AOA",
+            "4760": "FM",
+            "4761": "FMA",
+            "4763": "RF",
+            "4764": "AFD",
+            "4773": "BRO",
+            "4785": "PIN"
+        }
+        return supplier_map.get(pgpgrp, "")
+    
+    df["PGPGRP"] = df["PGPGRP"].astype('Int64').astype(str).str.strip()
+    filter_values = {"4136", "4178", "4740", "4741", "4760", "4761", "4763", "4764", "4773", "4785", "4137"}
+    filtered_df = df[df["PGPGRP"].isin(filter_values)]
+    
+    filtered_df.fillna('', inplace=True)
+    
+    # replacing values with supplier names
+    filtered_df["PGPGRP"] = filtered_df["PGPGRP"].apply(map_supplier)
+    
+    # renaming the first column to 'Supplier'
+    filtered_df = filtered_df.rename(columns={filtered_df.columns[0]: 'Supplier'})
+    
+    #inserting and dropping relevant columns
+    filtered_df.insert(0, 'Distributor', 'RMI')
+    
+    filtered_df.drop(['CTPPGD', 'PGDESC'], axis=1, inplace=True)
+    
+    #moving columns around and renaming
+    if 'PGPRDC' in filtered_df.columns:
+        columns = list(filtered_df.columns)
+        columns.remove('PGPRDC')
+        columns.insert(1, 'PGPRDC')
+        filtered_df = filtered_df[columns]
+        
+        filtered_df.rename(columns={'PGPRDC': 'Model'}, inplace=True)
+
+    if 'TOTAV01' in filtered_df.columns:
+        columns = list(filtered_df.columns)
+        columns.remove('TOTAV01')
+        columns.insert(2, 'TOTAV01')
+        filtered_df = filtered_df[columns]
+        
+        filtered_df.rename(columns={'TOTAV01': 'Quantity'}, inplace=True)
+    
+    filtered_df.insert(2, 'Warehouse', '')
+
+    
+    #saving to new file
+    filtered_df.to_csv(f"{download_dir}/rmi_formatted.csv", index=False)
+    append_log_messages(f"Formatted RMI.")
+    
+    
+    
+
+def process_rut(df):
+    print("Processing RUT")
+    valid_suppliers = ["RH Peterson", "Wolf Steel USA, LLC", "Memphis Wood Fire Grills", "AMD Direct"]
+    filtered_data = df[df["Supplier Name"].str.strip().isin(valid_suppliers)]
+
+    filtered_data["100"] = filtered_data["Location 100 Available"]
+    filtered_data["200"] = filtered_data["Location 200 Available"]
+    filtered_data["300"] = filtered_data["Location 300 Available"]
+
+    filtered_data.drop(['Location 100 Available', 'Location 200 Available', 'Location 300 Available'], axis=1, inplace=True)
+
+    # making new rows because its just easier
+    new_rows = []
+    for _, item in filtered_data.iterrows():
+        for index, warehouse in zip([100, 200, 300], ["GA", "FL", "NC"]):
+            quantity = int(item[str(index)])
+            new_row = {
+                'Distributor': 'RUT',
+                'Model': item['Item ID'].strip().upper(),
+                'Warehouse': warehouse,
+                'Quantity': str(quantity),
+                'Supplier': ''
+            }
+
+            # map supplier
+            supplier_name = item['Supplier Name'].strip()
+            if supplier_name == "RH Peterson":
+                new_row['Supplier'] = "PET"
+            elif supplier_name == "Wolf Steel USA, LLC":
+                new_row['Supplier'] = "NPL"
+            elif supplier_name == "Memphis Wood Fire Grills":
+                new_row['Supplier'] = "MEM"
+            elif supplier_name == "AMD Direct":
+                new_row['Supplier'] = "AMD"
+
+            new_rows.append(new_row)
+
+    #converting to new df
+    result_df = pd.DataFrame(new_rows)
+
+    result_df.to_csv(f"{download_dir}/rut_formatted.csv", index=False)
+    append_log_messages(f"Formatted RUT.")
+    
+    return result_df
+
+
+
+def process_aes(df):
+    print("Processing 'AES' file:")
+    df.drop(['Inventory Description', 'Inventory ID', 'Warehouse', 'Barcode', 'Supplier', 'Brands', 'Item Class', 'AES Retail Price', 'Volume', 'Weight', 'Item Class Description'], axis=1, inplace=True)
+    valid_supplier_codes = ["V000064", "V000073", "V000583"]
+    filtered_data = df[df["Supplier ID"].str.strip().isin(valid_supplier_codes)]
+
+    filtered_data.to_csv(f"{download_dir}/aes_formatted.csv", index=False)
+    append_log_messages(f"Formatted AES.")
+
+
+
+
+
+def process_tsd(df):
+    print("Processing 'TSD' file:")
+    print(df.info())
+    
+def process_azf(df):
+    print("Processing 'AZF' file:")
+    print(df.describe())
+
+def process_pin(df):
+    print("Processing 'PIN' file:")
+    print(df.info())
+
+def process_pcs(df):
+    print("Processing 'PCS' file:")
+    print(df.info())
+
+def process_default(df):
+    return
+    
+def pandas(file_paths):
+    switch = {
+        'aes': process_aes,
+        'azf': process_azf,
+        'for': process_for,
+        'pcs': process_pcs,
+        'pin': process_pin,
+        'rmi': process_rmi,
+        'rut': process_rut,
+        'tsd': process_tsd
+    }
+
+    for file_path in file_paths:
+        base_name = os.path.basename(file_path).replace(".csv", "").lower()
+        df = pd.read_csv(file_path)
+        
+        # processing correct function based off of switch
+        process_func = switch.get(base_name, process_default)
+        
+            
+        process_func(df)
                                                                                           
 #                          ___                                       ___
 #                         (   )                                     (   )
