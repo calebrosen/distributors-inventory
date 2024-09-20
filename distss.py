@@ -20,6 +20,8 @@ import time
 import threading
 import smtplib
 import openpyxl
+import mysql.connector
+from mysql.connector import Error
 from email.mime.text import MIMEText
 import re
 from email.mime.multipart import MIMEMultipart
@@ -74,7 +76,6 @@ pin_password = os.getenv("PIN_PASSWORD")
 log_messages = []
 current_date_mm_dd_yyyy =datetime.now().strftime('%m/%d/%Y')
 current_date = datetime.now().strftime("%Y%m%d")
-pandas_has_run = False
 current_date_w_dashes = datetime.now().strftime("%Y-%m-%d")
 csv_folder_path = os.getenv("CSV_FOLDER_PATH")
 download_dir = os.path.abspath(csv_folder_path)
@@ -125,7 +126,7 @@ def append_log_messages(log_message, goodOrBad):
     
     # passing 1 to this functions means something bad happened,
     # so I am sending an email to IT inbox with it
-    if (goodOrBad == 'b'):
+    if (goodOrBad == 1):
         send_error_email(log_message)
     
     print(f"Log appended: {log_message}")
@@ -137,6 +138,10 @@ class MainWindow(QMainWindow):
 
     def __init__(self):
         super().__init__()
+        
+    
+        # this is all main UI layout, should not have to be touched even with future implementations
+        
         global main_window_instance
         main_window_instance = self
         self.signals = WorkerSignals()
@@ -148,23 +153,23 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central_widget)
         main_layout = QVBoxLayout(central_widget)
 
-        # Scrollable area for the log display
+
         scroll_area = QScrollArea(self)
         scroll_area.setWidgetResizable(True)
 
-        self.log_container = QWidget()  # Container for QLabel
+        self.log_container = QWidget()
         scroll_layout = QVBoxLayout(self.log_container)
 
-        # Log display label
+        
         self.label = QLabel("", self)
         self.label.setStyleSheet(
             "background-color: black; color: white; font-family: 'Courier'; font-size: 14px;")
         self.label.setAlignment(Qt.AlignmentFlag.AlignTop)
-        self.label.setWordWrap(True)  # Allow word wrap for long messages
+        self.label.setWordWrap(True)
 
         scroll_layout.addWidget(self.label)
 
-        scroll_area.setWidget(self.log_container)  # Set the container as the scroll area content
+        scroll_area.setWidget(self.log_container)
 
         main_layout.addWidget(scroll_area)
 
@@ -294,7 +299,10 @@ class MainWindow(QMainWindow):
         # after everything is done
         get_csv_files(selected_distributors)
         upload_to_creator()
-        import_csv_to_mysql()
+        import_csv_to_mysql("distributors_availability", master_file_path)
+        import_csv_to_mysql("irg_warehouse", f"{download_dir}/irg_formatted.csv")
+
+
 
 
 
@@ -332,7 +340,8 @@ class MainWindow(QMainWindow):
 
         # after everything is done
         get_csv_files(selected_distributors)
-        import_csv_to_mysql()
+        import_csv_to_mysql("distributors_availability", master_file_path)
+        import_csv_to_mysql("irg_warehouse", f"{download_dir}/irg_formatted.csv")
 
 
 
@@ -626,25 +635,25 @@ def get_azf_spreadsheet(access_token):
 
             processed_csv_data_azf = [
                 row for row in csv_data_azf
-                if not all(re.fullmatch(r'-+', field.strip()) for field in row)  # Remove rows where all fields are only dashes
+                if not all(re.fullmatch(r'-+', field.strip()) for field in row)  # removing rows where all fields are only dashes
             ]
 
-            # Further replace any bad data with 0 in remaining rows
+            # cleaning bad data
             cleaned_csv_data_azf = [
                 [field if field.strip() not in bad_data_values else '0' for field in row] for row in processed_csv_data_azf
             ]
 
-            # Write the cleaned data to the CSV file
+            # writing cleaned data
             with open(csv_file_azf, 'w', newline='', encoding='utf-8') as file:
                 writer = csv.writer(file)
                 row_count = 0
 
                 if headers_azf:
-                    writer.writerow(headers_azf)  # Write headers
+                    writer.writerow(headers_azf)
                     row_count += 1
 
                 for fields_azf in cleaned_csv_data_azf:
-                    writer.writerow(fields_azf)  # Write cleaned rows
+                    writer.writerow(fields_azf)
                     row_count += 1
 
             append_log_messages(f'AZF Date Received: {azf_email_received_date}', 0)
@@ -1483,7 +1492,7 @@ def upload_to_creator():
         wait = WebDriverWait(driver, 30)
         driver.get("https://creatorapp.zoho.com/internetresourcegroup/backorder-application#Form:Delete_Distributors_Stock")
 
-        # Login process
+        # logging in
         zoho_user_name = wait.until(EC.element_to_be_clickable((By.ID, "login_id")))
         zoho_user_name.send_keys(zoho_username_email)
         driver.find_element(By.ID, "nextbtn").click()
@@ -1492,9 +1501,11 @@ def upload_to_creator():
         zoho_password_field.send_keys(zoho_password)
         driver.find_element(By.ID, "nextbtn").click()
 
-        print('looking for buttons')
+        # since the page is technically available but it's just a loading indicator, waiting a few seconds
+        time.sleep(8)
+        
         try:
-            remind_me_later = browser.find_element(By.CLASS_NAME, "remind_me_later")
+            remind_me_later = driver.find_element(By.CLASS_NAME, "remind_me_later")
             if remind_me_later.is_displayed():
                 remind_me_later.click()
         except NoSuchElementException:
@@ -1503,7 +1514,7 @@ def upload_to_creator():
             pass
 
         try:
-            close_session_element = browser.find_element(By.ID, "close_session")
+            close_session_element = driver.find_element(By.ID, "close_session")
             if close_session_element.is_displayed():
                 close_session_element.click()
         except NoSuchElementException:
@@ -1512,7 +1523,7 @@ def upload_to_creator():
             pass
 
         try:
-            doitlater = browser.find_element(By.CLASS_NAME, "dolater")
+            doitlater = driver.find_element(By.CLASS_NAME, "dolater")
             if doitlater.is_displayed():
                 doitlater.click()
         except NoSuchElementException:
@@ -1540,9 +1551,12 @@ def upload_to_creator():
 
         # removing any search filters if they're present
         try:
-            searchFilterX = wait.until(EC.element_to_be_clickable((By.ID, "cancelCriteria")))
-            searchFilterX.click()
-        except (NoSuchElementException, TimeoutException):
+            searchFilterX = driver.find_element(By.ID, "cancelCriteria")
+            if searchFilterX.is_displayed():
+                searchFilterX.click()
+        except NoSuchElementException:
+            pass
+        except TimeoutException:
             pass
 
         # clicking the import button
@@ -1563,8 +1577,19 @@ def upload_to_creator():
         # starting upload process
         wait.until(EC.element_to_be_clickable((By.ID, "s2a-create"))).click()
 
+        time.sleep(2.5)
+        
         try:
-            WebDriverWait(browser, 600).until(
+            import_button = wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, 'button.ZsAlertBtn.ZsAlertBtnGrey.ml10')))
+            if import_button.is_displayed():
+                import_button.click()
+        except (NoSuchElementException, TimeoutException):
+            append_log_messages("Import warning not found - proceeding")
+
+        time.sleep(3)
+        
+        try:
+            WebDriverWait(driver, 600).until(
             lambda d: d.execute_script(
                 "return document.getElementById('PercentageIndicator') === null"
                 )
@@ -1578,6 +1603,7 @@ def upload_to_creator():
 
         append_log_messages("Uploading is complete", 0)
         driver.quit()
+        
 
     except TimeoutException as e:
         error_message = "Timeout during upload_to_creator function"
@@ -1634,7 +1660,18 @@ def get_csv_files(selected_distributors):
 
     return file_paths
 
-                                                                        
+
+#                         _  .-')
+#                        ( \( -O )
+#    ,------. .-'),-----. ,------.
+# ('-| _.---'( OO'  .-.  '|   /`. '
+# (OO|(_\    /   |  | |  ||  /  | |
+# /  |  '--. \_) |  |\|  ||  |_.' |
+# \_)|  .--'   \ |  | |  ||  .  '.'
+#   \|  |_)     `'  '-'  '|  |\  \
+#    `--'         `-----' `--' '--'
+
+                                                   
 def process_for(df):
     df.reset_index(inplace=True)
     df.rename(columns={'index': 'Quantity', 'availabletosell': 'Model'}, inplace=True)
@@ -1661,7 +1698,18 @@ def process_for(df):
     append_log_messages(f"Formatted FOR.", 0)
     
     return filtered_df
-    
+
+
+#          _  .-')
+#         ( \( -O )
+#   ,-.-') ,------.   ,----.
+#   |  |OO)|   /`. ' '  .-./-')
+#   |  |  \|  /  | | |  |_( O- )
+#   |  |(_/|  |_.' | |  | .--, \
+#  ,|  |_.'|  .  '.'(|  | '. (_/
+# (_|  |   |  |\  \  |  '--'  |
+#   `--'   `--' '--'  `------'
+  
 
 def process_irg(df):
     df.insert(2, 'Date', current_date_mm_dd_yyyy)
@@ -1671,6 +1719,17 @@ def process_irg(df):
     return df
 
 
+#  _  .-')  _   .-')
+# ( \( -O )( '.( OO )_
+#  ,------. ,--.   ,--.) ,-.-')
+#  |   /`. '|   `.'   |  |  |OO)
+#  |  /  | ||         |  |  |  \
+#  |  |_.' ||  |'.'|  |  |  |(_/
+#  |  .  '.'|  |   |  | ,|  |_.'
+#  |  |\  \ |  |   |  |(_|  |
+#  `--' '--'`--'   `--'  `--'
+ 
+ 
 def process_rmi(df):
     def map_supplier(pgpgrp):
         supplier_map = {
@@ -1730,6 +1789,17 @@ def process_rmi(df):
     append_log_messages(f"Formatted RMI.", 0)
     
     return filtered_df
+
+
+#  _  .-')              .-') _
+# ( \( -O )            (  OO) )
+#  ,------. ,--. ,--.  /     '._
+#  |   /`. '|  | |  |  |'--...__)
+#  |  /  | ||  | | .-')'--.  .--'
+#  |  |_.' ||  |_|( OO )  |  |
+#  |  .  '.'|  | | `-' /  |  |
+#  |  |\  \('  '-'(_.-'   |  |
+#  `--' '--' `-----'      `--'
     
     
 def process_rut(df):
@@ -1777,6 +1847,16 @@ def process_rut(df):
     return result_df
 
 
+#    ('-.       ('-.    .-')
+#   ( OO ).-. _(  OO)  ( OO ).
+#   / . --. /(,------.(_)---\_)
+#   | \-.  \  |  .---'/    _ |
+# .-'-'  |  | |  |    \  :` `.
+#  \| |_.'  |(|  '--.  '..`''.)
+#   |  .-.  | |  .--' .-._)   \
+#   |  | |  | |  `---.\       /
+#   `--' `--' `------' `-----'
+
 
 def process_aes(df):
     
@@ -1813,6 +1893,16 @@ def process_aes(df):
     return filtered_data
 
 
+#  .-') _     .-')   _ .-') _
+# (  OO) )   ( OO ).( (  OO) )
+# /     '._ (_)---\_)\     .'_
+# |'--...__)/    _ | ,`'--..._)
+# '--.  .--'\  :` `. |  |  \  '
+#    |  |    '..`''.)|  |   ' |
+#    |  |   .-._)   \|  |   / :
+#    |  |   \       /|  '--'  /
+#    `--'    `-----' `-------'
+   
 
 def process_tsd(df):
     
@@ -1868,6 +1958,17 @@ def process_tsd(df):
     append_log_messages(f"Formatted TSD.", 0)
     
     return filtered_data
+
+
+#    ('-.       .-') _
+#   ( OO ).-.  (  OO) )
+#   / . --. /,(_)----.   ,------.
+#   | \-.  \ |       |('-| _.---'
+# .-'-'  |  |'--.   / (OO|(_\
+#  \| |_.'  |(_/   /  /  |  '--.
+#   |  .-.  | /   /___\_)|  .--'
+#   |  | |  ||        | \|  |_)
+#   `--' `--'`--------'  `--'
 
 
 def process_azf(df):
@@ -1932,7 +2033,17 @@ def process_azf(df):
     return result_df
 
 
-
+#    _ (`-.              .-') _
+#   ( (OO  )            ( OO ) )
+#  _.`     \ ,-.-') ,--./ ,--,'
+# (__...--'' |  |OO)|   \ |  |\
+#  |  /  | | |  |  \|    \|  | )
+#  |  |_.' | |  |(_/|  .     |/
+#  |  .___.',|  |_.'|  |\    |
+#  |  |    (_|  |   |  | \   |
+#  `--'      `--'   `--'  `--'
+ 
+ 
 def process_pin(df):
     df.fillna('', inplace=True)
     
@@ -1964,6 +2075,15 @@ def process_pin(df):
     return filtered_data
 
 
+#    _ (`-.            .-')
+#   ( (OO  )          ( OO ).
+#  _.`     \  .-----.(_)---\_)
+# (__...--'' '  .--.//    _ |
+#  |  /  | | |  |('-.\  :` `.
+#  |  |_.' |/_) |OO  )'..`''.)
+#  |  .___.'||  |`-'|.-._)   \
+#  |  |    (_'  '--'\\       /
+#  `--'       `-----' `-----'
 
 
 def process_pcs(df):
@@ -1983,6 +2103,7 @@ def process_pcs(df):
 
 
 def process_default(df):
+    append_log_messages("Process default hit on process_file function", 1)
     return
 
 
@@ -2051,11 +2172,16 @@ def pandas(file_paths):
     # combining into master file
     if formatted_dfs:
         master_df = pd.concat(formatted_dfs, ignore_index=True)
+        
+        # inserting unix epoch
+        master_df.insert(4, 'Date', int(time.time()))
+        columns = ['Distributor', 'Model', 'Warehouse', 'Quantity', 'Supplier', 'Date']
+        master_df = master_df[columns]
+        
         master_df.to_csv(master_file_path, index=False)
         append_log_messages(f"MASTER FILE CREATED AT {master_file_path}", 0)
     else:
         append_log_messages("No formatted files found for the master file.", 1)
-        
         
         
 #                          ___                                       ___
@@ -2071,17 +2197,32 @@ def pandas(file_paths):
 #  `.__.'  (___)(___)  `.__,'      | \__.'  `.__.'_. (___)(___)  `.__,'   `.__.'_.   '.___.'
 #                                  | |
 #                                 (___)
-                                                                                          
 
-def import_csv_to_mysql():
+
+#  /$$      /$$ /$$     /$$ /$$$$$$   /$$$$$$  /$$             /$$$$$$ /$$      /$$ /$$$$$$$   /$$$$$$  /$$$$$$$  /$$$$$$$$
+# | $$$    /$$$|  $$   /$$//$$__  $$ /$$__  $$| $$            |_  $$_/| $$$    /$$$| $$__  $$ /$$__  $$| $$__  $$|__  $$__/
+# | $$$$  /$$$$ \  $$ /$$/| $$  \__/| $$  \ $$| $$              | $$  | $$$$  /$$$$| $$  \ $$| $$  \ $$| $$  \ $$   | $$
+# | $$ $$/$$ $$  \  $$$$/ |  $$$$$$ | $$  | $$| $$              | $$  | $$ $$/$$ $$| $$$$$$$/| $$  | $$| $$$$$$$/   | $$
+# | $$  $$$| $$   \  $$/   \____  $$| $$  | $$| $$              | $$  | $$  $$$| $$| $$____/ | $$  | $$| $$__  $$   | $$
+# | $$\  $ | $$    | $$    /$$  \ $$| $$/$$ $$| $$              | $$  | $$\  $ | $$| $$      | $$  | $$| $$  \ $$   | $$
+# | $$ \/  | $$    | $$   |  $$$$$$/|  $$$$$$/| $$$$$$$$       /$$$$$$| $$ \/  | $$| $$      |  $$$$$$/| $$  | $$   | $$
+# |__/     |__/    |__/    \______/  \____ $$$|________/      |______/|__/     |__/|__/       \______/ |__/  |__/   |__/
+#                                         \__/
+                                                                                                                         
+def import_csv_to_mysql(mysql_table, file_to_upload):
     conn = None
     cursor = None
     try:
-        csv_file_irg = os.path.join(csv_folder_path, 'irg.csv')
-        df = pd.read_csv(csv_file_irg)
-        df.fillna("None", inplace=True) # fixing missing values that would otherwise break the import
-        
-        conn = mysql.connector.connect(host=mysql_host, user=mysql_user, password=mysql_password, database=mysql_database)
+        df = pd.read_csv(file_to_upload)
+        df.fillna(0, inplace=True)
+
+        # fixing data
+        if 'Quantity' in df.columns:
+            df['Quantity'] = pd.to_numeric(df['Quantity'], errors='coerce')
+            df['Quantity'].fillna(0, inplace=True)
+            df['Quantity'] = df['Quantity'].astype(int)
+
+        conn = mysql.connector.connect(host=mysql_host, user=mysql_user, password=mysql_password, database=mysql_db)
         
         if conn.is_connected():
             append_log_messages("Connected to the database. Running queries...", 0)
@@ -2112,8 +2253,6 @@ def import_csv_to_mysql():
             cursor.close()
         if conn and conn.is_connected():
             conn.close()
-
-
 
 
 if __name__ == "__main__":
