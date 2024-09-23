@@ -12,8 +12,6 @@ from selenium.webdriver.common.action_chains import ActionChains
 from selenium.webdriver.common.alert import Alert
 from selenium.webdriver.support import expected_conditions as EC
 import logging
-from pynput.keyboard import Key, Controller as KeyboardController
-from pynput.mouse import Button, Controller as MouseController
 import os
 import io
 import time
@@ -1601,7 +1599,7 @@ def upload_to_creator():
             append_log_messages('Percentage indicator (after creator upload) timed out', 1)
             pass
 
-        append_log_messages("Uploading is complete", 0)
+        append_log_messages("*** Uploading to Creator is complete ***", 0)
         driver.quit()
         
 
@@ -1695,7 +1693,7 @@ def process_for(df):
     filtered_df = df[df["Supplier"].isin(filter_values_for)].copy()
     
     filtered_df.to_csv(f"{download_dir}/for_formatted.csv", index=False)
-    append_log_messages(f"Formatted FOR.", 0)
+    append_log_messages(f"- Formatted FOR.", 0)
     
     return filtered_df
 
@@ -1714,7 +1712,7 @@ def process_for(df):
 def process_irg(df):
     df.insert(2, 'Date', current_date_mm_dd_yyyy)
     df.to_csv(f"{download_dir}/irg_formatted.csv", index=False)
-    append_log_messages(f"Formatted IRG.", 0)
+    append_log_messages(f"- Formatted IRG.", 0)
     
     return df
 
@@ -1786,7 +1784,7 @@ def process_rmi(df):
     
     # saving to new file
     filtered_df.to_csv(f"{download_dir}/rmi_formatted.csv", index=False)
-    append_log_messages(f"Formatted RMI.", 0)
+    append_log_messages(f"- Formatted RMI.", 0)
     
     return filtered_df
 
@@ -1842,7 +1840,7 @@ def process_rut(df):
     result_df = pd.DataFrame(new_rows)
     
     result_df.to_csv(f"{download_dir}/rut_formatted.csv", index=False)
-    append_log_messages(f"Formatted RUT.", 0)
+    append_log_messages(f"- Formatted RUT.", 0)
     
     return result_df
 
@@ -1888,7 +1886,7 @@ def process_aes(df):
     filtered_data = filtered_data[columns]
     
     filtered_data.to_csv(f"{download_dir}/aes_formatted.csv", index=False)
-    append_log_messages(f"Formatted AES.", 0)
+    append_log_messages(f"- Formatted AES.", 0)
     
     return filtered_data
 
@@ -1955,7 +1953,7 @@ def process_tsd(df):
     filtered_data = filtered_data[columns]
     
     filtered_data.to_csv(f"{download_dir}/tsd_formatted.csv", index=False)
-    append_log_messages(f"Formatted TSD.", 0)
+    append_log_messages(f"- Formatted TSD.", 0)
     
     return filtered_data
 
@@ -2027,7 +2025,7 @@ def process_azf(df):
     result_df = pd.DataFrame(new_rows)
     
     
-    append_log_messages("Formatted AZF.", 0)
+    append_log_messages("- Formatted AZF.", 0)
     result_df.to_csv(f"{download_dir}/azf_formatted.csv", index=False)
     
     return result_df
@@ -2069,7 +2067,7 @@ def process_pin(df):
     filtered_data = filtered_data[columns]
     
      
-    append_log_messages("Formatted PIN.", 0)
+    append_log_messages("- Formatted PIN.", 0)
     filtered_data.to_csv(f"{download_dir}/pin_formatted.csv", index=False)
     
     return filtered_data
@@ -2097,13 +2095,14 @@ def process_pcs(df):
     columns = ['Distributor', 'Model', 'Warehouse', 'Quantity', 'Supplier']
     df = df[columns]
     
+    append_log_messages("- Formatted PCS.", 0)
     df.to_csv(f"{download_dir}/pcs_formatted.csv", index=False)
 
     return df
 
 
 def process_default(df):
-    append_log_messages("Process default hit on process_file function", 1)
+    append_log_messages("process_default hit on process_file function", 1)
     return
 
 
@@ -2125,6 +2124,8 @@ def process_file(file_path):
     with print_lock:
         try:
             print(f"Processing file: {file_path}")
+            # these "if's" are fixing issues with the spreadsheets. when adding a new distributor,
+            # you likely will not need to modify anything, but you can here if needed
             if '_formatted' not in base_name.lower():
                 if 'azf' in base_name:
                     df = pd.read_csv(file_path)
@@ -2142,6 +2143,7 @@ def process_file(file_path):
                     except UnicodeDecodeError:
                         df = pd.read_csv(file_path, encoding='ISO-8859-1')
                 else:
+                    # default scenario
                     df = pd.read_csv(file_path)
 
                 process_func = switch.get(base_name, process_default)
@@ -2151,7 +2153,7 @@ def process_file(file_path):
                     formatted_dfs_queue.put(processed_df)
 
         except Exception as e:
-            print(f"Error processing {file_path}: {str(e)}")
+            append_log_messages(f"Error processing {file_path}: {str(e)}", 1)
 
 
 def pandas(file_paths):
@@ -2163,7 +2165,7 @@ def pandas(file_paths):
             try:
                 future.result()
             except Exception as e:
-                print(f"Error in processing file {file_path}: {str(e)}")
+                append_log_messages(f"Error in processing file {file_path}: {str(e)}", 1)
 
     formatted_dfs = []
     while not formatted_dfs_queue.empty():
@@ -2173,13 +2175,16 @@ def pandas(file_paths):
     if formatted_dfs:
         master_df = pd.concat(formatted_dfs, ignore_index=True)
         
+        # converting to int
+        master_df['Quantity'] = master_df['Quantity'].astype(int)
+        
         # inserting unix epoch
         master_df.insert(4, 'Date', int(time.time()))
         columns = ['Distributor', 'Model', 'Warehouse', 'Quantity', 'Supplier', 'Date']
         master_df = master_df[columns]
         
         master_df.to_csv(master_file_path, index=False)
-        append_log_messages(f"MASTER FILE CREATED AT {master_file_path}", 0)
+        append_log_messages(f"- MASTER FILE CREATED AT {master_file_path}", 0)
     else:
         append_log_messages("No formatted files found for the master file.", 1)
         
