@@ -1582,12 +1582,13 @@ def upload_to_creator():
             if import_button.is_displayed():
                 import_button.click()
         except (NoSuchElementException, TimeoutException):
-            append_log_messages("Import warning not found - proceeding")
+            append_log_messages("Import warning not found - proceeding", 0)
+            pass
 
         time.sleep(3)
         
         try:
-            WebDriverWait(driver, 600).until(
+            WebDriverWait(driver, 3000).until(
             lambda d: d.execute_script(
                 "return document.getElementById('PercentageIndicator') === null"
                 )
@@ -1659,6 +1660,40 @@ def get_csv_files(selected_distributors):
     return file_paths
 
 
+def replace_values(value):
+    if value.strip().startswith('X-'):
+        value = value.strip()[2:]
+
+    replacements = {
+        'RBF36PG': '500002398',
+        'RBF30G': '500002388',
+        'RBF30WCG': '500002389',
+        'RBF36G': '500002400',
+        'RBF36WCG': '500002401',
+        'RBF36PWCG': '500002399',
+        'RBF42G': '500002410',
+        'RBF42WCG': '500002411',
+        'EVO50': '500002573',
+        'EVO60': '500002574',
+        'EVO74': '500002608',
+        'EVO100': '500002563',
+        'BLFPLUGKIT': 'BLF-PLUG-KIT',
+        'P45-30AN': 'P45-30A',
+        'OLF46-AM': '136786',
+        'OLF66-AM': '136793',
+        'OLF86-AM': '136809',
+        'OLF46': '136786',
+        'OLF66': '136793',
+        'OLF86': '136809',
+        'DHTG32-LP': 'DHTG32-L',
+        'DHTG32-NG': 'DHTG32-N'
+    }
+
+    for old, new in replacements.items():
+        value = value.replace(old, new)
+    
+    return value
+
 #                         _  .-')
 #                        ( \( -O )
 #    ,------. .-'),-----. ,------.
@@ -1688,6 +1723,7 @@ def process_for(df):
     columns = ['Distributor', 'Model', 'Warehouse', 'Quantity', 'Supplier']
     df = df[columns]
     
+    df['Model'] = df['Model'].apply(replace_values)
     # filtering for manufacturer/brand
     filter_values_for = {"FMR", "AFD", "AOG", "PET", "DIM"}
     filtered_df = df[df["Supplier"].isin(filter_values_for)].copy()
@@ -1780,7 +1816,8 @@ def process_rmi(df):
         filtered_df.rename(columns={'TOTAV01': 'Quantity'}, inplace=True)
     
     filtered_df.insert(2, 'Warehouse', '')
-
+    
+    filtered_df['Model'] = filtered_df['Model'].apply(replace_values)
     
     # saving to new file
     filtered_df.to_csv(f"{download_dir}/rmi_formatted.csv", index=False)
@@ -1839,6 +1876,8 @@ def process_rut(df):
     # converting to new df
     result_df = pd.DataFrame(new_rows)
     
+    result_df['Model'] = result_df['Model'].apply(replace_values)
+    
     result_df.to_csv(f"{download_dir}/rut_formatted.csv", index=False)
     append_log_messages(f"- Formatted RUT.", 0)
     
@@ -1884,6 +1923,8 @@ def process_aes(df):
     # reordering columns
     columns = ['Distributor', 'Model', 'Warehouse', 'Quantity', 'Supplier']
     filtered_data = filtered_data[columns]
+    
+    filtered_data['Model'] = filtered_data['Model'].apply(replace_values)
     
     filtered_data.to_csv(f"{download_dir}/aes_formatted.csv", index=False)
     append_log_messages(f"- Formatted AES.", 0)
@@ -1951,6 +1992,8 @@ def process_tsd(df):
     filtered_data.insert(2, 'Warehouse', '')
     columns = ['Distributor', 'Model', 'Warehouse', 'Quantity', 'Supplier']
     filtered_data = filtered_data[columns]
+    
+    filtered_data['Model'] = filtered_data['Model'].apply(replace_values)
     
     filtered_data.to_csv(f"{download_dir}/tsd_formatted.csv", index=False)
     append_log_messages(f"- Formatted TSD.", 0)
@@ -2024,6 +2067,7 @@ def process_azf(df):
     # converting to new df
     result_df = pd.DataFrame(new_rows)
     
+    result_df['Model'] = result_df['Model'].apply(replace_values)
     
     append_log_messages("- Formatted AZF.", 0)
     result_df.to_csv(f"{download_dir}/azf_formatted.csv", index=False)
@@ -2066,6 +2110,7 @@ def process_pin(df):
     columns = ['Distributor', 'Model', 'Warehouse', 'Quantity', 'Supplier']
     filtered_data = filtered_data[columns]
     
+    filtered_data['Model'] = filtered_data['Model'].apply(replace_values)
      
     append_log_messages("- Formatted PIN.", 0)
     filtered_data.to_csv(f"{download_dir}/pin_formatted.csv", index=False)
@@ -2094,6 +2139,8 @@ def process_pcs(df):
     df.insert(3, 'Supplier', 'Not Specified')
     columns = ['Distributor', 'Model', 'Warehouse', 'Quantity', 'Supplier']
     df = df[columns]
+    
+    df['Model'] = df['Model'].apply(replace_values)
     
     append_log_messages("- Formatted PCS.", 0)
     df.to_csv(f"{download_dir}/pcs_formatted.csv", index=False)
@@ -2175,9 +2222,12 @@ def pandas(file_paths):
     if formatted_dfs:
         master_df = pd.concat(formatted_dfs, ignore_index=True)
         
-        # converting to int
-        master_df['Quantity'] = master_df['Quantity'].astype(int)
+        # converting to integer
+        master_df['Quantity'] = pd.to_numeric(master_df['Quantity'], errors='coerce').fillna(0).astype(int)
         
+        # replacing all negatives with 0
+        master_df['Quantity'] = master_df['Quantity'].apply(lambda x: 0 if x < 0 else x)
+      
         # inserting unix epoch
         master_df.insert(4, 'Date', int(time.time()))
         columns = ['Distributor', 'Model', 'Warehouse', 'Quantity', 'Supplier', 'Date']
