@@ -134,7 +134,10 @@ def process_new(df):
     # Reordering Columns
     columns = ['Distributor', 'Model', 'Warehouse', 'Quantity', 'Supplier']
     df = df[columns]
-    
+
+    # Formatting some models for consolidation
+    df['Model'] = df['Model'].apply(replace_values)
+
     append_log_messages("- Formatted New.", 0)
 
     df.to_csv(f"{download_dir}/new_formatted.csv", index=False)
