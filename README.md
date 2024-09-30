@@ -3,6 +3,9 @@
 
 This python application is used for the retrieval, processing, formatting and uploading of IRG's distributor's inventory count.
 
+## Preview: 
+![](https://github.com/calebrosen/distributors-inventory/blob/main/distributors_inventory_preview.gif)
+
 ## Installation
 
 Install python first, then open CMD and run
