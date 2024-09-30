@@ -276,6 +276,10 @@ class MainWindow(QMainWindow):
 
         self.update_selected_distributors()
         
+                
+        # automatically running function on program opening
+        self.downloadSelectedAndUploadToCreatorButton.click()
+        
     def update_log_display(self):
         log_display = "<br>".join(log_messages)
         self.label.setText(f"<pre>{log_display}</pre>")
