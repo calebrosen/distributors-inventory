@@ -276,6 +276,7 @@ class MainWindow(QMainWindow):
 
         self.update_selected_distributors()
         
+        
     def update_log_display(self):
         log_display = "<br>".join(log_messages)
         self.label.setText(f"<pre>{log_display}</pre>")
@@ -326,8 +327,11 @@ class MainWindow(QMainWindow):
         
         if (master_row_count > 0):
             upload_to_creator()
-        import_csv_to_mysql("distributors_availability", master_file_path)
-        import_csv_to_mysql("irg_warehouse", f"{download_dir}/irg_formatted.csv")
+            import_csv_to_mysql("distributors_availability", master_file_path)
+            import_csv_to_mysql("irg_warehouse", f"{download_dir}/irg_formatted.csv")
+
+        time.sleep(30)
+        exit()
 
 
 
@@ -2263,7 +2267,9 @@ def pandas(file_paths):
         columns = ['Distributor', 'Model', 'Warehouse', 'Quantity', 'Supplier', 'Date']
         master_df = master_df[columns]
         
+        global master_row_count
         master_row_count = master_df.shape[0]
+        print('Master row count: ' + str(master_row_count))
         
         master_df.to_csv(master_file_path, index=False)
         append_log_messages(f"- MASTER FILE CREATED AT {master_file_path}", 0)
