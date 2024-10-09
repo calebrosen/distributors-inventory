@@ -1714,6 +1714,15 @@ def replace_values(value):
         'EVO60': '500002574',
         'EVO74': '500002608',
         'EVO100': '500002563',
+        'ULT50': '500003149',
+        'ULT60': '500003151',
+        'ULT74': '500003152',
+        'ULT88': '500003154',
+        'ULT100': '500003155',
+        'ASP30': '500003050',
+        'ASP36': '500003051',
+        'ASP42': '500003049',
+        'ASP48': '500003060',
         'BLFPLUGKIT': 'BLF-PLUG-KIT',
         'P45-30AN': 'P45-30A',
         'OLF46-AM': '136786',
@@ -1725,6 +1734,7 @@ def replace_values(value):
         'DHTG32-LP': 'DHTG32-L',
         'DHTG32-NG': 'DHTG32-N'
     }
+
 
     for old, new in replacements.items():
         value = value.replace(old, new)
